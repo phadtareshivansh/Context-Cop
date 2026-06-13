@@ -1163,18 +1163,31 @@ function getModels() { return provider === 'openai' ? OPENAI_MODELS : GEMINI_MOD
 // ── Provider UI ───────────────────────────────────────────
 function selectProvider(p) {
   provider = p;
-  // tab UI
-  document.getElementById('tab-gemini').classList.toggle('active', p === 'gemini');
-  document.getElementById('tab-openai').classList.toggle('active', p === 'openai');
-  document.getElementById('tab-gemini').setAttribute('aria-selected', p === 'gemini');
-  document.getElementById('tab-openai').setAttribute('aria-selected', p === 'openai');
-  document.getElementById('panel-gemini').style.display = p === 'gemini' ? '' : 'none';
-  document.getElementById('panel-openai').style.display = p === 'openai' ? '' : 'none';
-}
+  
+  // Toggle Tab active states
+  const tabGemini = document.getElementById('tab-gemini');
+  const tabOpenai = document.getElementById('tab-openai');
+  const panelGemini = document.getElementById('panel-gemini');
+  const panelOpenai = document.getElementById('panel-openai');
 
+  if (tabGemini && tabOpenai) {
+    tabGemini.classList.toggle('active', p === 'gemini');
+    tabOpenai.classList.toggle('active', p === 'openai');
+    tabGemini.setAttribute('aria-selected', p === 'gemini');
+    tabOpenai.setAttribute('aria-selected', p === 'openai');
+  }
+  
+  // Safely toggle layout panel visibility
+  if (panelGemini && panelOpenai) {
+    panelGemini.style.display = p === 'gemini' ? 'block' : 'none';
+    panelOpenai.style.display = p === 'openai' ? 'block' : 'none';
+  }
+}
 function populateModelSelect() {
   const sel = document.getElementById('model-select');
+  if (!sel) return;
   sel.innerHTML = '';
+  
   for (const m of getModels()) {
     const opt = document.createElement('option');
     opt.value = m.id;
@@ -1182,11 +1195,14 @@ function populateModelSelect() {
     sel.appendChild(opt);
   }
   const first = getModels()[0];
-  maxTokens = first.ctx;
+  maxTokens = first ? first.ctx : 128000;
   updateMeter(totalTokens);
-  // update pill
-  document.getElementById('provider-pill-icon').textContent = provider === 'openai' ? '⬡' : '✦';
-  document.getElementById('provider-pill-label').textContent = provider === 'openai' ? 'OpenAI / Codex' : 'Gemini';
+  
+  // update layout pill indicators safely
+  const pillIcon = document.getElementById('provider-pill-icon');
+  const pillLabel = document.getElementById('provider-pill-label');
+  if (pillIcon) pillIcon.textContent = provider === 'openai' ? '⬡' : '✦';
+  if (pillLabel) pillLabel.textContent = provider === 'openai' ? 'OpenAI / Codex' : 'Gemini';
 }
 
 // ── Gemini API ───────────────────────────────────────────
@@ -1211,7 +1227,6 @@ async function geminiGenerate(model, contents) {
 
 // ── OpenAI API ───────────────────────────────────────────
 async function openaiGenerate(model, contents) {
-  // Convert Gemini-style contents → OpenAI messages
   const oaiMessages = contents.map(m => ({
     role: m.role === 'model' ? 'assistant' : m.role,
     content: m.parts.map(p => p.text).join(''),
@@ -1235,7 +1250,6 @@ async function openaiGenerate(model, contents) {
   const usage = { totalTokenCount: data?.usage?.total_tokens || 0 };
   return { text, usage };
 }
-
 // ── Unified dispatcher ───────────────────────────────────
 async function generate(model, contents) {
   if (provider === 'openai') return openaiGenerate(model, contents);
@@ -1244,8 +1258,8 @@ async function generate(model, contents) {
 
 // ── Token estimation ─────────────────────────────────────
 function estimateTokens(text) {
-  // ~4 chars per token is a reasonable heuristic
-  return Math.ceil(text.length / 3.8);
+  // Lowering slightly to 3.4 heuristic since this handles developer payloads/code strings well
+  return Math.ceil(text.length / 3.4);
 }
 
 function estimateContextTokens() {
@@ -1268,27 +1282,28 @@ function updateMeter(tokens) {
   const pctBadge = document.getElementById('pct-badge');
   const meter = document.getElementById('token-meter-wrap');
 
-  fill.style.width = `${pct * 100}%`;
-  count.textContent = tokens.toLocaleString();
-  pctBadge.textContent = `${pctInt}%`;
-  meter.setAttribute('aria-valuenow', pctInt);
+  if (fill) fill.style.width = `${pct * 100}%`;
+  if (count) count.textContent = tokens.toLocaleString();
+  if (pctBadge) pctBadge.textContent = `${pctInt}%`;
+  if (meter) meter.setAttribute('aria-valuenow', pctInt);
 
-  // colour
-  if (pct < 0.6) {
-    fill.style.background = 'var(--green)';
-    count.className = 'safe';
-  } else if (pct < threshold) {
-    fill.style.background = 'linear-gradient(90deg, var(--green), var(--yellow))';
-    count.className = 'warn';
-  } else {
-    fill.style.background = 'linear-gradient(90deg, var(--yellow), var(--red))';
-    count.className = 'danger';
+  if (fill && count) {
+    if (pct < 0.6) {
+      fill.style.background = 'var(--green)';
+      count.className = 'safe';
+    } else if (pct < threshold) {
+      fill.style.background = 'linear-gradient(90deg, var(--green), var(--yellow))';
+      count.className = 'warn';
+    } else {
+      fill.style.background = 'linear-gradient(90deg, var(--yellow), var(--red))';
+      count.className = 'danger';
+    }
   }
 
-  // max label
-  document.getElementById('token-max').textContent =
-    (maxTokens >= 1_000_000) ? (maxTokens / 1_000_000) + 'M' :
-    (maxTokens / 1000) + 'k';
+  const maxLabel = document.getElementById('token-max');
+  if (maxLabel) {
+    maxLabel.textContent = (maxTokens >= 1_000_000) ? (maxTokens / 1_000_000) + 'M' : (maxTokens / 1000) + 'k';
+  }
 }
 
 // ── Stats sidebar ─────────────────────────────────────────
@@ -1431,12 +1446,29 @@ document.getElementById('model-select').addEventListener('change', function () {
 });
 
 // ── Summarisation ─────────────────────────────────────────
+// ── Summarisation with Notification Toasts ────────────────
+// ── Summarisation with Interactive Permission Check ──────
 async function autoSummarizeIfNeeded() {
-  if (messages.length < 4) return;          // need at least 4 turns
+  if (messages.length < 2) return;          
+  
   const tokens = estimateContextTokens();
   if (tokens / maxTokens < threshold) return;
 
-  await runSummarization();
+  // Prompt the user for explicit permission via a modal popup box
+  const userApproved = confirm("🚨 Context Cop Alert:\n\nYour chat history has passed the threshold percentage limit! Would you like to compress older history turns right now to save context window space?");
+
+  if (userApproved) {
+    // If user selects "Yes" (OK), execute compression routines
+    appendMessage('system', '⚡ Compressing older history frames to clear context workspace paths...', 0);
+    logActivity('Auto-compress approved by user', 'info');
+    
+    // Tiny visual break delay for UI smoothness
+    await sleep(800);
+    await runSummarization();
+  } else {
+    // If user selects "No" (Cancel), bypass and log activity
+    logActivity('Auto-compress deferred by user configuration', 'warn');
+  }
 }
 
 async function runSummarization() {
@@ -1501,20 +1533,30 @@ async function runSummarization() {
 }
 
 function buildSummaryPrompt(msgs) {
-  let conv = '';
-  if (summaryBlob) conv += `[Previous summary]\n${summaryBlob}\n\n`;
-  conv += '[Conversation to summarise]\n';
+  let instructions = `You are a context compression engine. Your task is to update the existing ongoing summary by cleanly integrating the new conversation turns provided below. 
+  
+Create a single, seamless, consolidated bulleted layout. Preserve all critical technical details, parameters, code schemas, and decisions while avoiding conversational filler.\n\n`;
+
+  if (summaryBlob) {
+    instructions += `[Current Summary State]\n${summaryBlob}\n\n`;
+  }
+
+  instructions += '[New System Sequence to Integrate]\n';
   for (const m of msgs) {
     const role = m.role === 'user' ? 'User' : 'Assistant';
-    conv += `${role}: ${m.parts[0].text}\n`;
+    instructions += `${role}: ${m.parts[0].text}\n`;
   }
+  
+  instructions += '\nUpdated Consolidated Summary:';
+
   return [{
     role: 'user',
-    parts: [{
-      text: `You are a context compressor. Summarise the following conversation turns into a compact, factual summary that preserves all key information, decisions, and context. Be thorough but concise. Use bullet points. Omit pleasantries.\n\n${conv}\n\nSummary:`
-    }]
+    parts: [{ text: instructions }]
   }];
 }
+
+// ── Corrected buildContents Structure ────────────────────
+
 
 // ── Send message ──────────────────────────────────────────
 async function sendMessage() {
