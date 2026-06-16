@@ -4,6 +4,14 @@ Context Cop is a single-page AI chat interface with a polished landing page and 
 
 The app is split into markup, styles, and JavaScript files, and can run in demo mode or connect to Gemini/OpenAI-compatible chat APIs.
 
+## Live App
+
+Context Cop is deployed on Vercel:
+
+```text
+https://context-cop-phi.vercel.app/
+```
+
 ## Features
 
 - Live context-window meter with active and compressed token counts
@@ -18,6 +26,14 @@ The app is split into markup, styles, and JavaScript files, and can run in demo 
 - Responsive single-page layout with no build step
 
 ## Quick Start
+
+Use the live app:
+
+```text
+https://context-cop-phi.vercel.app/
+```
+
+Or run it locally.
 
 Open the app directly in a browser:
 
@@ -39,13 +55,29 @@ http://127.0.0.1:8765
 
 ## Build
 
-Create a deployable Sites artifact:
+Create the static production build used by Vercel:
 
 ```bash
 npm run build
 ```
 
-This writes a Cloudflare Worker-compatible package to `dist/`.
+This writes the Vercel-served static app to `dist/client`.
+
+## Deployment
+
+The app is deployed on Vercel from this GitHub repository.
+
+Use these Vercel settings:
+
+```text
+Framework Preset: Other
+Install Command: npm install
+Build Command: npm run build
+Output Directory: dist/client
+Environment Variables: none
+```
+
+The app does not require Vercel environment variables because provider API keys are entered at runtime in the browser, or skipped entirely in demo mode.
 
 ## Usage
 
@@ -98,10 +130,13 @@ For production use, route model calls through a backend service and keep provide
 |   `-- styles.css
 |-- js/
 |   `-- app.js
+|-- public/
+|   `-- screenshot.jpeg
 |-- scripts/
 |   `-- build-sites.mjs
 |-- index.html
 |-- package.json
+|-- vercel.json
 `-- README.md
 ```
 
