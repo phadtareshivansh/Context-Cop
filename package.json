@@ -1,0 +1,10 @@
+{
+  "name": "context-cop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-sites.mjs",
+    "serve": "python3 -m http.server 8766 --bind 127.0.0.1"
+  }
+}

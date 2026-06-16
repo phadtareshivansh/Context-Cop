@@ -2,7 +2,7 @@
 
 Context Cop is a single-page AI chat interface with a polished landing page and an app experience for long AI conversations. It shows a live token estimate, tracks how much context is active or compressed, and can summarize older turns before the chat runs out of room.
 
-The app lives entirely in `index.html` and can run in demo mode or connect to Gemini/OpenAI-compatible chat APIs.
+The app is split into markup, styles, and JavaScript files, and can run in demo mode or connect to Gemini/OpenAI-compatible chat APIs.
 
 ## Features
 
@@ -36,6 +36,16 @@ Then visit:
 ```text
 http://127.0.0.1:8765
 ```
+
+## Build
+
+Create a deployable Sites artifact:
+
+```bash
+npm run build
+```
+
+This writes a Cloudflare Worker-compatible package to `dist/`.
 
 ## Usage
 
@@ -82,16 +92,26 @@ For production use, route model calls through a backend service and keep provide
 .
 |-- assets/
 |   `-- context-layers-hero.png
-|-- index.html   # Complete app: HTML, CSS, and JavaScript
-`-- README.md    # Project documentation
+|-- .openai/
+|   `-- hosting.json
+|-- css/
+|   `-- styles.css
+|-- js/
+|   `-- app.js
+|-- scripts/
+|   `-- build-sites.mjs
+|-- index.html
+|-- package.json
+`-- README.md
 ```
 
 ## Customization
 
-- Edit the model catalogs in `GEMINI_MODELS` and `OPENAI_MODELS`.
-- Change the default compression threshold by updating the `threshold` value and slider default.
-- Adjust token estimation in `estimateTokens()`.
-- Tune the compression behavior in `runSummarization()` and `buildSummaryPrompt()`.
+- Edit the model catalogs in `js/app.js` through `GEMINI_MODELS` and `OPENAI_MODELS`.
+- Change the default compression threshold in `js/app.js` and the slider default in `index.html`.
+- Adjust token estimation in `js/app.js` through `estimateTokens()`.
+- Tune the compression behavior in `js/app.js` through `runSummarization()` and `buildSummaryPrompt()`.
+- Adjust the visual system in `css/styles.css`.
 
 ## Limitations
 
