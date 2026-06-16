@@ -5,30 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Context Cop — Never Lose Your Thread</title>
   <meta name="description" content="Context Cop wraps your AI chat with a live token meter and automatic summarization, so long conversations never blur your context window." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath d='M24 7 41 15.5 24 24 7 15.5 24 7Z' fill='none' stroke='%238af7bd' stroke-width='3' stroke-linejoin='round'/%3E%3Cpath d='M41 24 24 32 7 24' fill='none' stroke='%238af7bd' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' opacity='.75'/%3E%3Cpath d='M41 32 24 40 7 32' fill='none' stroke='%238af7bd' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' opacity='.5'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     /* ── Design Tokens ─────────────────────────────── */
     :root {
-      --bg-base:      #0a0c12;
-      --bg-card:      #111520;
-      --bg-card2:     #161b2a;
-      --bg-glass:     rgba(20, 26, 48, 0.72);
-      --border:       rgba(100, 120, 200, 0.12);
-      --border-glow:  rgba(99, 102, 241, 0.35);
-      --accent:       #6366f1;
-      --accent-light: #818cf8;
-      --accent-dim:   rgba(99, 102, 241, 0.15);
+      --bg-base:      #06090c;
+      --bg-card:      #0d1318;
+      --bg-card2:     #111a20;
+      --bg-glass:     rgba(9, 15, 20, 0.76);
+      --border:       rgba(151, 185, 204, 0.14);
+      --border-glow:  rgba(82, 224, 140, 0.38);
+      --accent:       #52e08c;
+      --accent-light: #8af7bd;
+      --accent-dim:   rgba(82, 224, 140, 0.13);
+      --blue:         #3ba8ff;
+      --blue-dim:     rgba(59, 168, 255, 0.14);
       --green:        #10b981;
       --yellow:       #f59e0b;
       --red:          #ef4444;
       --text-1:       #f1f5f9;
       --text-2:       #94a3b8;
       --text-3:       #475569;
-      --radius:       14px;
+      --radius:       8px;
       --radius-sm:    8px;
-      --shadow:       0 8px 40px rgba(0,0,0,0.55);
+      --shadow:       0 18px 60px rgba(0,0,0,0.5);
       --font-mono:    'JetBrains Mono', monospace;
     }
 
@@ -42,6 +45,7 @@
       display: flex;
       flex-direction: column;
       height: 100vh;
+      position: relative;
     }
 
     /* ── Animated background ───────────────────────── */
@@ -50,10 +54,522 @@
       position: fixed;
       inset: 0;
       background:
-        radial-gradient(ellipse 60% 50% at 20% 10%, rgba(99,102,241,0.08) 0%, transparent 60%),
-        radial-gradient(ellipse 40% 40% at 80% 80%, rgba(16,185,129,0.05) 0%, transparent 60%);
+        radial-gradient(ellipse 60% 50% at 20% 10%, rgba(82,224,140,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 40% at 80% 80%, rgba(59,168,255,0.06) 0%, transparent 60%);
       pointer-events: none;
       z-index: 0;
+    }
+
+    body.landing-mode #top-bar,
+    body.landing-mode #main,
+    body.landing-mode #summarising-banner {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(16px);
+    }
+
+    body.app-mode #landing {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transform: translateY(-16px);
+    }
+
+    #top-bar,
+    #main,
+    #summarising-banner,
+    #landing {
+      transition: opacity 0.45s ease, transform 0.45s ease, visibility 0.45s ease;
+    }
+
+    /* ── Landing ───────────────────────────────────── */
+    #landing {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      width: 100vw;
+      max-width: 100vw;
+      overflow-y: auto;
+      overflow-x: hidden;
+      background:
+        linear-gradient(180deg, rgba(6,9,12,0.18), var(--bg-base) 82%),
+        url("assets/context-layers-hero.png") clamp(16px, 4vw, 60px) bottom / min(780px, 62vw) auto no-repeat,
+        var(--bg-base);
+      color: var(--text-1);
+      isolation: isolate;
+    }
+
+    #landing::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(6,9,12,0.9) 0%, rgba(6,9,12,0.58) 39%, rgba(6,9,12,0.92) 100%),
+        radial-gradient(ellipse 60% 38% at 58% 22%, rgba(82,224,140,0.1), transparent 58%),
+        radial-gradient(ellipse 42% 28% at 82% 34%, rgba(59,168,255,0.11), transparent 56%);
+      z-index: -1;
+    }
+
+    .landing-nav {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      min-height: 88px;
+      padding: 18px clamp(22px, 5vw, 64px);
+      border-bottom: 1px solid rgba(151,185,204,0.09);
+      background: linear-gradient(180deg, rgba(6,9,12,0.92), rgba(6,9,12,0.62));
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .brand-lockup {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 760;
+      font-size: clamp(1rem, 2vw, 1.35rem);
+      letter-spacing: -0.03em;
+      color: var(--text-1);
+    }
+
+    .brand-mark,
+    .landing-mark {
+      width: 34px;
+      height: 34px;
+      color: var(--accent-light);
+      flex: 0 0 auto;
+      filter: drop-shadow(0 0 12px rgba(82,224,140,0.35));
+    }
+
+    .landing-links {
+      display: flex;
+      align-items: center;
+      gap: clamp(16px, 3vw, 40px);
+    }
+
+    .landing-link,
+    .landing-open,
+    .landing-cta,
+    .landing-ghost {
+      font-family: 'Inter', sans-serif;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+    }
+
+    .landing-link {
+      border: 0;
+      background: transparent;
+      color: rgba(226,232,240,0.82);
+      font-size: 0.92rem;
+      font-weight: 500;
+      padding: 8px 2px;
+    }
+
+    .landing-link:hover { color: var(--text-1); }
+
+    .landing-open {
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+      border: 1px solid rgba(151,185,204,0.34);
+      background: rgba(255,255,255,0.035);
+      color: var(--accent-light);
+      font-weight: 680;
+      font-size: 0.94rem;
+      padding: 14px 22px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    .landing-open:hover {
+      border-color: var(--border-glow);
+      background: rgba(82,224,140,0.09);
+    }
+
+    .landing-hero {
+      min-height: calc(100vh - 88px);
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(520px, 1.1fr);
+      align-items: center;
+      gap: clamp(28px, 5vw, 72px);
+      padding: clamp(28px, 5vw, 68px) clamp(22px, 5vw, 64px) 92px;
+      position: relative;
+    }
+
+    .landing-copy {
+      max-width: 720px;
+      min-width: 0;
+      padding-bottom: 40px;
+    }
+
+    .landing-copy h1 {
+      font-size: clamp(3.25rem, 5.15vw, 5.9rem);
+      line-height: 0.98;
+      letter-spacing: -0.065em;
+      font-weight: 800;
+      max-width: 680px;
+      text-wrap: balance;
+    }
+
+    .landing-copy p {
+      margin-top: 24px;
+      max-width: 620px;
+      color: #b8c6d1;
+      font-size: clamp(1.1rem, 1.55vw, 1.45rem);
+      line-height: 1.55;
+      letter-spacing: -0.01em;
+    }
+
+    .landing-actions {
+      margin-top: 34px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    .landing-cta,
+    .landing-ghost {
+      min-height: 58px;
+      min-width: min(100%, 214px);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      padding: 16px 24px;
+      font-size: 1.04rem;
+      font-weight: 760;
+      transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .landing-cta {
+      border: 1px solid rgba(138,247,189,0.5);
+      background: linear-gradient(135deg, #50d889, #239f65);
+      color: #06110a;
+      box-shadow: 0 16px 42px rgba(82,224,140,0.28), inset 0 1px 0 rgba(255,255,255,0.35);
+    }
+
+    .landing-ghost {
+      border: 1px solid rgba(151,185,204,0.32);
+      background: rgba(255,255,255,0.025);
+      color: #8dc8ff;
+    }
+
+    .landing-cta:hover,
+    .landing-ghost:hover {
+      transform: translateY(-2px);
+      border-color: var(--border-glow);
+    }
+
+    .landing-preview {
+      border: 1px solid rgba(151,185,204,0.28);
+      border-radius: 12px;
+      min-height: 560px;
+      background: linear-gradient(180deg, rgba(15,22,28,0.9), rgba(6,10,13,0.95));
+      box-shadow: 0 28px 90px rgba(0,0,0,0.52), inset 0 1px 0 rgba(255,255,255,0.08);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .landing-preview::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(125deg, transparent 0 36%, rgba(255,255,255,0.06) 48%, transparent 60%);
+      pointer-events: none;
+      opacity: 0.5;
+    }
+
+    .preview-top {
+      height: 66px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 0 22px;
+      border-bottom: 1px solid rgba(151,185,204,0.14);
+    }
+
+    .preview-brand,
+    .preview-controls,
+    .preview-chip,
+    .preview-nav-item,
+    .preview-status,
+    .preview-activity {
+      display: flex;
+      align-items: center;
+    }
+
+    .preview-brand {
+      gap: 10px;
+      font-weight: 720;
+      font-size: 1.02rem;
+      letter-spacing: -0.02em;
+    }
+
+    .preview-controls {
+      gap: 10px;
+    }
+
+    .preview-chip {
+      min-height: 34px;
+      gap: 8px;
+      padding: 0 12px;
+      border: 1px solid rgba(151,185,204,0.16);
+      border-radius: 7px;
+      color: #c9d5dd;
+      font-size: 0.76rem;
+      background: rgba(255,255,255,0.03);
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: 106px minmax(0, 1fr) 260px;
+      min-height: 494px;
+    }
+
+    .preview-rail {
+      border-right: 1px solid rgba(151,185,204,0.13);
+      padding: 22px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .preview-nav-item {
+      min-height: 72px;
+      flex-direction: column;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      color: #99a8b3;
+      font-size: 0.72rem;
+    }
+
+    .preview-nav-item.active {
+      border-color: rgba(151,185,204,0.18);
+      background: rgba(255,255,255,0.035);
+      color: var(--text-1);
+    }
+
+    .preview-chat {
+      padding: 26px 28px;
+      border-right: 1px solid rgba(151,185,204,0.13);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .preview-message {
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr);
+      gap: 12px;
+      color: #d8e2ea;
+      font-size: 0.86rem;
+      line-height: 1.55;
+    }
+
+    .preview-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: rgba(82,224,140,0.12);
+      border: 1px solid rgba(82,224,140,0.22);
+      color: var(--accent-light);
+      font-weight: 700;
+    }
+
+    .preview-message.user .preview-avatar {
+      background: rgba(59,168,255,0.13);
+      border-color: rgba(59,168,255,0.28);
+      color: #9bd2ff;
+    }
+
+    .preview-meta {
+      color: #7e8d98;
+      font-size: 0.72rem;
+      margin-bottom: 4px;
+    }
+
+    .preview-stack {
+      width: min(100%, 420px);
+      margin: 8px 0 0 42px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .preview-layer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 46px;
+      padding: 0 16px;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      color: #dbfff0;
+      border: 1px solid rgba(138,247,189,0.46);
+      background: linear-gradient(90deg, rgba(82,224,140,0.35), rgba(82,224,140,0.08));
+      box-shadow: 0 0 24px rgba(82,224,140,0.12);
+    }
+
+    .preview-layer:nth-child(2) {
+      color: #c7fff0;
+      border-color: rgba(82,224,204,0.36);
+      background: linear-gradient(90deg, rgba(24,169,132,0.28), rgba(24,169,132,0.08));
+    }
+
+    .preview-layer:nth-child(3) {
+      color: #cce6ff;
+      border-color: rgba(59,168,255,0.35);
+      background: linear-gradient(90deg, rgba(59,168,255,0.23), rgba(59,168,255,0.08));
+    }
+
+    .preview-input {
+      margin-top: auto;
+      min-height: 76px;
+      border: 1px solid rgba(151,185,204,0.16);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.025);
+      color: #7f8e98;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      font-size: 0.78rem;
+    }
+
+    .preview-side {
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .preview-side h3 {
+      font-size: 0.78rem;
+      letter-spacing: -0.01em;
+      margin-bottom: 10px;
+    }
+
+    .preview-token {
+      font-family: var(--font-mono);
+      font-size: 1.8rem;
+      font-weight: 600;
+      letter-spacing: -0.04em;
+    }
+
+    .preview-token span {
+      color: #73818d;
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    .preview-mini-meter {
+      margin-top: 12px;
+      height: 10px;
+      border-radius: 99px;
+      background: rgba(255,255,255,0.08);
+      overflow: hidden;
+    }
+
+    .preview-mini-meter div {
+      height: 100%;
+      width: 34%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--blue));
+    }
+
+    .preview-status {
+      gap: 8px;
+      color: var(--accent-light);
+      font-size: 0.8rem;
+      font-weight: 650;
+    }
+
+    .preview-activity {
+      justify-content: space-between;
+      color: #9aa8b3;
+      font-size: 0.73rem;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(151,185,204,0.08);
+    }
+
+    .preview-activity strong { color: var(--accent-light); font-weight: 650; }
+
+    .landing-bottom {
+      position: absolute;
+      left: clamp(22px, 5vw, 64px);
+      right: clamp(22px, 5vw, 64px);
+      bottom: 22px;
+      min-height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(226,232,240,0.72);
+      border: 1px solid rgba(151,185,204,0.12);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.025);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      font-size: clamp(1rem, 2.4vw, 1.55rem);
+      font-weight: 760;
+      letter-spacing: -0.04em;
+    }
+
+    #landing-how {
+      padding: 84px clamp(22px, 5vw, 64px) 96px;
+      display: grid;
+      grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr);
+      gap: clamp(28px, 5vw, 76px);
+      border-top: 1px solid rgba(151,185,204,0.1);
+      background: linear-gradient(180deg, rgba(7,12,15,0.84), rgba(7,12,15,0.98));
+    }
+
+    #landing-how h2 {
+      font-size: clamp(2.4rem, 4.5vw, 4.6rem);
+      line-height: 0.98;
+      letter-spacing: -0.055em;
+      text-wrap: balance;
+    }
+
+    .how-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .how-card {
+      min-height: 176px;
+      border: 1px solid rgba(151,185,204,0.14);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.026);
+      padding: 20px;
+    }
+
+    .how-card span {
+      display: block;
+      color: var(--accent-light);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      margin-bottom: 28px;
+    }
+
+    .how-card h3 {
+      font-size: 1rem;
+      margin-bottom: 10px;
+    }
+
+    .how-card p {
+      color: #9caab5;
+      font-size: 0.84rem;
+      line-height: 1.55;
     }
 
     /* ── Top Bar ───────────────────────────────────── */
@@ -85,13 +601,19 @@
     #top-bar .logo .badge {
       width: 32px;
       height: 32px;
-      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      color: var(--accent-light);
+      background: rgba(82,224,140,0.08);
+      border: 1px solid rgba(82,224,140,0.22);
       border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
-      box-shadow: 0 0 16px rgba(99,102,241,0.45);
+      box-shadow: 0 0 16px rgba(82,224,140,0.18);
+    }
+
+    #top-bar .logo .badge svg {
+      width: 22px;
+      height: 22px;
     }
 
     /* ── Token Meter ───────────────────────────────── */
@@ -149,27 +671,39 @@
     #token-count.danger { color: var(--red); }
 
     #meter-bar-track {
-      height: 5px;
-      background: rgba(255,255,255,0.07);
+      height: 8px;
+      background: rgba(255,255,255,0.04);
       border-radius: 99px;
       overflow: hidden;
       position: relative;
     }
 
-    #meter-bar-fill {
+    .meter-fill-compressed,
+    .meter-fill-active {
       height: 100%;
       border-radius: 99px;
-      transition: width 0.5s cubic-bezier(.4,0,.2,1), background 0.4s;
-      background: var(--green);
-      position: relative;
+      position: absolute;
+      top: 0;
+      left: 0;
+      transition: left 0.45s cubic-bezier(.4,0,.2,1), width 0.45s cubic-bezier(.4,0,.2,1), background 0.3s;
       overflow: hidden;
     }
 
-    #meter-bar-fill::after {
+    .meter-fill-compressed {
+      background: linear-gradient(90deg, rgba(59,168,255,0.2), rgba(59,168,255,0.08));
+      z-index: 1;
+    }
+
+    .meter-fill-active {
+      background: linear-gradient(90deg, var(--accent), var(--blue));
+      z-index: 2;
+    }
+
+    .meter-fill-active::after {
       content: '';
       position: absolute;
       inset: 0;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
       animation: shimmer 2s linear infinite;
     }
 
@@ -204,7 +738,7 @@
     }
 
     .config-btn:hover {
-      background: rgba(99,102,241,0.25);
+      background: rgba(82,224,140,0.2);
       transform: translateY(-1px);
     }
 
@@ -353,7 +887,7 @@
       height: 14px;
       border-radius: 50%;
       background: var(--accent);
-      box-shadow: 0 0 8px rgba(99,102,241,0.6);
+      box-shadow: 0 0 8px rgba(82,224,140,0.6);
       transition: transform 0.15s;
     }
 
@@ -438,7 +972,7 @@
       font-weight: 600;
     }
 
-    .msg-wrap.user   .msg-avatar { background: linear-gradient(135deg, var(--accent), #a78bfa); }
+    .msg-wrap.user   .msg-avatar { background: linear-gradient(135deg, var(--accent), var(--blue)); color: #04100a; }
     .msg-wrap.ai     .msg-avatar { background: linear-gradient(135deg, #1e293b, #334155); border: 1px solid var(--border); }
     .msg-wrap.system .msg-avatar { background: linear-gradient(135deg, #1a2a20, #1e3a2a); border: 1px solid rgba(16,185,129,0.2); }
 
@@ -453,7 +987,7 @@
 
     .msg-bubble {
       padding: 12px 16px;
-      border-radius: 14px;
+      border-radius: var(--radius);
       font-size: 0.88rem;
       line-height: 1.65;
       position: relative;
@@ -461,10 +995,10 @@
     }
 
     .msg-wrap.user .msg-bubble {
-      background: linear-gradient(135deg, var(--accent), #7c3aed);
-      color: #fff;
+      background: linear-gradient(135deg, var(--accent), var(--blue));
+      color: #04100a;
       border-bottom-right-radius: 4px;
-      box-shadow: 0 4px 20px rgba(99,102,241,0.3);
+      box-shadow: 0 4px 20px rgba(82,224,140,0.22);
     }
 
     .msg-wrap.ai .msg-bubble {
@@ -506,10 +1040,10 @@
 
     /* Summary card */
     .summary-card {
-      border: 1px dashed rgba(99,102,241,0.35);
+      border: 1px dashed rgba(82,224,140,0.35);
       border-radius: var(--radius);
       padding: 16px 20px;
-      background: rgba(99,102,241,0.06);
+      background: rgba(82,224,140,0.055);
       position: relative;
       animation: msgIn 0.4s ease;
     }
@@ -522,8 +1056,8 @@
     }
 
     .summary-card-badge {
-      background: linear-gradient(135deg, var(--accent), #7c3aed);
-      color: #fff;
+      background: linear-gradient(135deg, var(--accent), var(--blue));
+      color: #04100a;
       font-size: 0.65rem;
       font-weight: 700;
       letter-spacing: 0.08em;
@@ -619,16 +1153,16 @@
 
     #user-input:focus {
       border-color: var(--border-glow);
-      box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+      box-shadow: 0 0 0 3px rgba(82,224,140,0.12);
     }
 
     #send-btn {
       width: 48px;
       height: 48px;
-      background: linear-gradient(135deg, var(--accent), #7c3aed);
+      background: linear-gradient(135deg, var(--accent), var(--blue));
       border: none;
       border-radius: 12px;
-      color: #fff;
+      color: #04100a;
       font-size: 18px;
       cursor: pointer;
       display: flex;
@@ -636,12 +1170,12 @@
       justify-content: center;
       flex-shrink: 0;
       transition: transform 0.15s, box-shadow 0.2s;
-      box-shadow: 0 4px 16px rgba(99,102,241,0.4);
+      box-shadow: 0 4px 16px rgba(82,224,140,0.32);
     }
 
     #send-btn:hover:not(:disabled) {
       transform: translateY(-2px);
-      box-shadow: 0 6px 22px rgba(99,102,241,0.55);
+      box-shadow: 0 6px 22px rgba(82,224,140,0.42);
     }
 
     #send-btn:active:not(:disabled) { transform: translateY(0); }
@@ -690,11 +1224,11 @@
     #key-modal {
       background: var(--bg-card);
       border: 1px solid var(--border-glow);
-      border-radius: 20px;
+      border-radius: 12px;
       padding: 32px;
       width: 100%;
       max-width: 440px;
-      box-shadow: var(--shadow), 0 0 60px rgba(99,102,241,0.12);
+      box-shadow: var(--shadow), 0 0 60px rgba(82,224,140,0.12);
       animation: modalIn 0.35s cubic-bezier(.34,1.56,.64,1);
     }
 
@@ -726,22 +1260,6 @@
 
     #key-modal p a:hover { text-decoration: underline; }
 
-    #api-key-input {
-      width: 100%;
-      background: var(--bg-card2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 10px 14px;
-      font-family: var(--font-mono);
-      font-size: 0.83rem;
-      color: var(--text-1);
-      outline: none;
-      margin-bottom: 14px;
-      transition: border-color 0.2s;
-    }
-
-    #api-key-input:focus { border-color: var(--border-glow); }
-
     .modal-row {
       display: flex;
       gap: 10px;
@@ -750,19 +1268,19 @@
     .btn-primary {
       flex: 1;
       padding: 10px 20px;
-      background: linear-gradient(135deg, var(--accent), #7c3aed);
+      background: linear-gradient(135deg, var(--accent), var(--blue));
       border: none;
       border-radius: var(--radius-sm);
-      color: #fff;
+      color: #04100a;
       font-family: 'Inter', sans-serif;
       font-size: 0.88rem;
       font-weight: 600;
       cursor: pointer;
       transition: transform 0.15s, box-shadow 0.2s;
-      box-shadow: 0 4px 14px rgba(99,102,241,0.35);
+      box-shadow: 0 4px 14px rgba(82,224,140,0.28);
     }
 
-    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99,102,241,0.5); }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(82,224,140,0.38); }
     .btn-primary:active { transform: translateY(0); }
 
     .btn-ghost {
@@ -798,7 +1316,7 @@
       background: var(--accent-dim);
       border-color: var(--border-glow);
       color: var(--accent-light);
-      box-shadow: 0 0 12px rgba(99,102,241,0.2);
+      box-shadow: 0 0 12px rgba(82,224,140,0.18);
     }
 
     .provider-tab:hover:not(.active) {
@@ -832,7 +1350,7 @@
       top: 12px;
       left: 50%;
       transform: translateX(-50%);
-      background: linear-gradient(135deg, rgba(99,102,241,0.9), rgba(124,58,237,0.9));
+      background: linear-gradient(135deg, rgba(82,224,140,0.9), rgba(59,168,255,0.9));
       backdrop-filter: blur(10px);
       border-radius: 99px;
       padding: 8px 18px;
@@ -842,7 +1360,7 @@
       align-items: center;
       gap: 8px;
       z-index: 20;
-      box-shadow: 0 4px 20px rgba(99,102,241,0.4);
+      box-shadow: 0 4px 20px rgba(82,224,140,0.3);
       white-space: nowrap;
       opacity: 0;
       transition: opacity 0.3s;
@@ -878,7 +1396,7 @@
     #empty-state .big-icon {
       font-size: 52px;
       line-height: 1;
-      filter: drop-shadow(0 0 24px rgba(99,102,241,0.4));
+      filter: drop-shadow(0 0 24px rgba(82,224,140,0.34));
     }
 
     #empty-state h3 {
@@ -903,15 +1421,382 @@
     }
 
     /* ── Responsive ────────────────────────────────── */
+    @media (max-width: 1120px) {
+      .landing-hero {
+        grid-template-columns: minmax(0, 1fr);
+        padding-top: 44px;
+      }
+
+      .landing-copy {
+        padding-bottom: 0;
+      }
+
+      .landing-preview {
+        min-height: 520px;
+      }
+    }
+
+    @media (max-width: 920px) {
+      .landing-nav {
+        gap: 14px;
+      }
+
+      .landing-links {
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .landing-link {
+        display: none;
+      }
+
+      .landing-preview {
+        min-height: auto;
+      }
+
+      .preview-grid {
+        grid-template-columns: 82px minmax(0, 1fr);
+      }
+
+      .preview-side {
+        display: none;
+      }
+
+      #landing-how {
+        grid-template-columns: 1fr;
+      }
+
+      .how-grid {
+        grid-template-columns: 1fr;
+      }
+
+      #top-bar {
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      #token-meter-wrap {
+        order: 3;
+        flex-basis: 100%;
+      }
+
+      #config-area {
+        margin-left: auto;
+      }
+    }
+
     @media (max-width: 700px) {
       #sidebar { display: none; }
+
+      .landing-nav {
+        min-height: 72px;
+        padding: 14px 18px;
+        width: 100%;
+        max-width: 100%;
+        overflow: hidden;
+      }
+
+      .brand-lockup {
+        font-size: 1.05rem;
+      }
+
+      .brand-mark {
+        width: 30px;
+        height: 30px;
+      }
+
+      .landing-open {
+        padding: 10px 12px;
+        font-size: 0.82rem;
+        gap: 8px;
+      }
+
+      .landing-hero {
+        min-height: calc(100vh - 72px);
+        padding: 34px 18px 88px;
+        gap: 28px;
+        width: 100%;
+        max-width: 100%;
+        overflow: hidden;
+      }
+
+      .landing-copy h1 {
+        width: min(100%, 330px);
+        font-size: clamp(2.55rem, 12.5vw, 3rem);
+        letter-spacing: -0.055em;
+        max-width: 100%;
+        text-wrap: auto;
+      }
+
+      .landing-copy p {
+        font-size: 1rem;
+      }
+
+      .landing-actions {
+        width: 100%;
+      }
+
+      .landing-cta,
+      .landing-ghost {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .landing-preview {
+        border-radius: 8px;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .preview-top {
+        height: auto;
+        min-height: 64px;
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 14px;
+      }
+
+      .preview-controls {
+        width: 100%;
+      }
+
+      .preview-chip {
+        flex: 1;
+        justify-content: center;
+        font-size: 0.68rem;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .preview-grid {
+        grid-template-columns: 1fr;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+      }
+
+      .preview-rail {
+        display: none;
+      }
+
+      .preview-chat {
+        border-right: 0;
+        padding: 18px;
+        min-height: 420px;
+        min-width: 0;
+      }
+
+      .preview-message {
+        grid-template-columns: 32px minmax(0, 1fr);
+      }
+
+      .preview-message > div:last-child {
+        min-width: 0;
+      }
+
+      .preview-stack {
+        margin-left: 0;
+        min-width: 0;
+      }
+
+      .preview-layer {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 5px;
+        padding: 10px 14px;
+      }
+
+      .landing-bottom {
+        left: 18px;
+        right: 18px;
+        font-size: 1rem;
+      }
+
+      #landing-how {
+        padding: 62px 18px 72px;
+        width: 100%;
+        max-width: 100%;
+        overflow: hidden;
+      }
+
+      #top-bar {
+        padding: 12px 14px;
+      }
+
+      #config-area {
+        order: 2;
+        width: 100%;
+        justify-content: stretch;
+        overflow-x: auto;
+        padding-bottom: 2px;
+      }
+
+      .config-btn {
+        flex: 0 0 auto;
+        padding: 7px 10px;
+      }
+
+      #meter-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      #meter-values {
+        flex-wrap: wrap;
+      }
+
+      .msg-body {
+        max-width: 84%;
+      }
+
+      #messages {
+        padding: 16px;
+      }
     }
   </style>
 </head>
-<body>
+<body class="landing-mode">
+
+<!-- Landing -->
+<section id="landing" aria-label="Context Cop landing page">
+  <nav class="landing-nav" aria-label="Landing navigation">
+    <div class="brand-lockup">
+      <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M24 7 41 15.5 24 24 7 15.5 24 7Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" />
+        <path d="M41 23.5 24 32 7 23.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".8" />
+        <path d="M41 31.5 24 40 7 31.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".55" />
+      </svg>
+      <span>Context Cop</span>
+    </div>
+    <div class="landing-links">
+      <button class="landing-link" onclick="scrollLandingTo('landing-how')">How it works</button>
+      <button class="landing-link" onclick="scrollLandingTo('provider-card')">Providers</button>
+      <button class="landing-open" onclick="launchApp()">
+        Open app
+        <span aria-hidden="true">-&gt;</span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="landing-hero">
+    <div class="landing-copy">
+      <h1>Never lose your AI thread again</h1>
+      <p>Context Cop watches your token window, compresses old turns, and keeps the useful context alive.</p>
+      <div class="landing-actions">
+        <button class="landing-cta" onclick="launchApp()">
+          Launch app
+          <span aria-hidden="true">-&gt;</span>
+        </button>
+        <button class="landing-ghost" onclick="launchApp({ demo: true })">
+          Try demo
+          <span aria-hidden="true">-&gt;</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="landing-preview" aria-label="Context Cop app preview">
+      <div class="preview-top">
+        <div class="preview-brand">
+          <svg class="landing-mark" viewBox="0 0 48 48" aria-hidden="true">
+            <path d="M24 7 41 15.5 24 24 7 15.5 24 7Z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" />
+            <path d="M41 23.5 24 32 7 23.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".8" />
+            <path d="M41 31.5 24 40 7 31.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" opacity=".55" />
+          </svg>
+          Context Cop
+        </div>
+        <div class="preview-controls">
+          <div class="preview-chip">Provider OpenAI</div>
+          <div class="preview-chip">Model gpt-4o</div>
+        </div>
+      </div>
+
+      <div class="preview-grid">
+        <div class="preview-rail">
+          <div class="preview-nav-item active">Chat</div>
+          <div class="preview-nav-item">Activity</div>
+          <div class="preview-nav-item">Settings</div>
+        </div>
+
+        <div class="preview-chat">
+          <div class="preview-message user">
+            <div class="preview-avatar">U</div>
+            <div>
+              <div class="preview-meta">You 9:41 AM</div>
+              Help me refactor the auth flow and keep the earlier decisions intact.
+            </div>
+          </div>
+          <div class="preview-message">
+            <div class="preview-avatar">AI</div>
+            <div>
+              <div class="preview-meta">AI 9:41 AM</div>
+              I will keep the context snapshot available while we update the plan.
+            </div>
+          </div>
+
+          <div class="preview-stack" aria-label="Context compression stack">
+            <div class="preview-layer"><span>Live context</span><strong>6.2k tokens</strong></div>
+            <div class="preview-layer"><span>Compressed summary</span><strong>8.7k tokens</strong></div>
+            <div class="preview-layer"><span>Archived turns</span><strong>21.3k tokens</strong></div>
+          </div>
+
+          <div class="preview-input">
+            <span>Message Context Cop...</span>
+            <strong>Send</strong>
+          </div>
+        </div>
+
+        <aside class="preview-side" aria-label="Preview context panel">
+          <div>
+            <h3>Token window</h3>
+            <div class="preview-token">38.2k <span>/ 128k</span></div>
+            <div class="preview-mini-meter"><div></div></div>
+          </div>
+          <div>
+            <h3>Compression</h3>
+            <div class="preview-status">Auto-compress enabled</div>
+          </div>
+          <div>
+            <h3>Activity</h3>
+            <div class="preview-activity"><span>Compressed 12 turns</span><strong>-8.7k</strong></div>
+            <div class="preview-activity"><span>Added 6 messages</span><strong>+2.1k</strong></div>
+            <div class="preview-activity"><span>Switched to gpt-4o</span><strong>OK</strong></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div class="landing-bottom">How Context Cop works</div>
+  </div>
+
+  <section id="landing-how" aria-label="How Context Cop works">
+    <h2>Long chats stay sharp.</h2>
+    <div class="how-grid">
+      <article class="how-card">
+        <span>01</span>
+        <h3>Watch the window</h3>
+        <p>A live meter separates active context from compressed memory so you know what the model can still see.</p>
+      </article>
+      <article class="how-card">
+        <span>02</span>
+        <h3>Compress old turns</h3>
+        <p>When the threshold is crossed, Context Cop turns older conversation into a compact running summary.</p>
+      </article>
+      <article class="how-card" id="provider-card">
+        <span>03</span>
+        <h3>Use your provider</h3>
+        <p>Run in demo mode, connect Gemini, or use OpenAI-compatible endpoints when you are ready.</p>
+      </article>
+    </div>
+  </section>
+</section>
 
 <!-- API Key Modal -->
-<div id="key-modal-bg">
+<div id="key-modal-bg" style="display:none">
   <div id="key-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <h2 id="modal-title">🔑 Connect your AI Provider</h2>
 
@@ -963,7 +1848,13 @@
 <!-- Top Bar -->
 <header id="top-bar">
   <div class="logo">
-    <div class="badge">🚨</div>
+    <div class="badge">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <path d="M24 7 41 15.5 24 24 7 15.5 24 7Z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" />
+        <path d="M41 23.5 24 32 7 23.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity=".78" />
+        <path d="M41 31.5 24 40 7 31.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity=".52" />
+      </svg>
+    </div>
     Context Cop
   </div>
 
@@ -975,20 +1866,29 @@
       </div>
       <div id="meter-values">
         <span id="token-count" class="safe">0</span>
-        <span style="color:var(--text-3)">/</span>
-        <span id="token-max" style="color:var(--text-2)">128,000</span>
+        <span id="token-breakdown" style="color:var(--text-2);font-family:var(--font-mono);font-size:0.72rem;margin-left:8px;">
+          <span id="active-count">0 act</span>
+          <span style="margin:0 6px;color:var(--text-3)">·</span>
+          <span id="compressed-count">0 comp</span>
+        </span>
+        <span style="color:var(--text-3);margin-left:8px">/</span>
+        <span id="token-max" style="color:var(--text-2);margin-left:8px">128,000</span>
         <span style="color:var(--text-3)">tokens</span>
         <span id="pct-badge" class="token-chip">0%</span>
       </div>
     </div>
     <div id="meter-bar-track">
-      <div id="meter-bar-fill" style="width:0%"></div>
+      <div id="meter-bar-compressed" class="meter-fill-compressed" style="width:0%"></div>
+      <div id="meter-bar-active" class="meter-fill-active" style="width:0%"></div>
     </div>
   </div>
 
   <div id="config-area">
     <button class="config-btn" id="clear-btn" title="Clear chat" onclick="clearChat()">
       🗑️ Clear
+    </button>
+    <button class="config-btn" id="check-conn-btn" title="Check backend connection" onclick="checkBackend()">
+      🔌 Check Connection
     </button>
     <button class="config-btn" id="force-summary-btn" title="Force summarisation now" onclick="forceSummarize()">
       ✨ Summarise Now
@@ -1137,6 +2037,30 @@ let isBusy      = false;
 let turnCount   = 0;
 let summaryCount = 0;
 let tokensSaved = 0;
+// When summaryBlob is stored we discount its visible weight by this factor
+const compressionRatio = 8; // compressed summary counts as ~1/8th of its raw tokens in the UI
+
+function launchApp(options = {}) {
+  const shouldDemo = Boolean(options && options.demo);
+  document.body.classList.remove('landing-mode');
+  document.body.classList.add('app-mode');
+  document.getElementById('landing')?.setAttribute('aria-hidden', 'true');
+
+  if (shouldDemo) {
+    useDemoMode();
+    return;
+  }
+
+  if (!apiKey && !demoMode) {
+    showKeyModal();
+  } else {
+    document.getElementById('user-input')?.focus({ preventScroll: true });
+  }
+}
+
+function scrollLandingTo(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 // ── Model catalogues ─────────────────────────────────────
 const GEMINI_MODELS = [
@@ -1182,6 +2106,8 @@ function selectProvider(p) {
     panelGemini.style.display = p === 'gemini' ? 'block' : 'none';
     panelOpenai.style.display = p === 'openai' ? 'block' : 'none';
   }
+
+  populateModelSelect();
 }
 function populateModelSelect() {
   const sel = document.getElementById('model-select');
@@ -1196,7 +2122,7 @@ function populateModelSelect() {
   }
   const first = getModels()[0];
   maxTokens = first ? first.ctx : 128000;
-  updateMeter(totalTokens);
+  updateMeter(estimateActiveTokens());
   
   // update layout pill indicators safely
   const pillIcon = document.getElementById('provider-pill-icon');
@@ -1259,7 +2185,7 @@ async function generate(model, contents) {
 // ── Token estimation ─────────────────────────────────────
 function estimateTokens(text) {
   // Lowering slightly to 3.4 heuristic since this handles developer payloads/code strings well
-  return Math.ceil(text.length / 3.4);
+  return Math.ceil(String(text ?? '').length / 3.4);
 }
 
 function estimateContextTokens() {
@@ -1271,31 +2197,58 @@ function estimateContextTokens() {
   return t;
 }
 
+// Estimate tokens for active messages only (exclude compressed summary)
+function estimateActiveTokens() {
+  let t = 0;
+  for (const m of messages) {
+    for (const p of m.parts) t += estimateTokens(p.text);
+  }
+  return t;
+}
+
 // ── Meter UI ─────────────────────────────────────────────
-function updateMeter(tokens) {
-  totalTokens = tokens;
-  const pct = Math.min(tokens / maxTokens, 1);
+function updateMeter(activeTokens) {
+  // activeTokens: tokens from uncompressed (active) messages
+  const activeSafe = Math.max(0, Number(activeTokens) || 0);
+  const summaryWeight = summaryBlob ? Math.ceil(estimateTokens(summaryBlob) / compressionRatio) : 0;
+  const visibleTokens = Math.max(0, activeSafe + summaryWeight);
+  totalTokens = visibleTokens;
+
+  const pct = Math.min(visibleTokens / maxTokens, 1);
   const pctInt = Math.round(pct * 100);
 
-  const fill  = document.getElementById('meter-bar-fill');
+  const compressedEl = document.getElementById('meter-bar-compressed');
+  const activeEl = document.getElementById('meter-bar-active');
   const count = document.getElementById('token-count');
+  const activeCount = document.getElementById('active-count');
+  const compressedCount = document.getElementById('compressed-count');
   const pctBadge = document.getElementById('pct-badge');
   const meter = document.getElementById('token-meter-wrap');
 
-  if (fill) fill.style.width = `${pct * 100}%`;
-  if (count) count.textContent = tokens.toLocaleString();
+  // compute separate percentages
+  const compWeight = summaryWeight;
+  const compPct = Math.min(compWeight / maxTokens, 1);
+  const activePct = Math.min(activeSafe / maxTokens, 1);
+  const compWidthPct = compPct * 100;
+  const activeWidthPct = Math.min(activePct * 100, Math.max(0, 100 - compWidthPct));
+
+  if (compressedEl) compressedEl.style.width = compWidthPct + '%';
+  if (activeEl) {
+    activeEl.style.left = compWidthPct + '%';
+    activeEl.style.width = activeWidthPct + '%';
+  }
+  if (count) count.textContent = visibleTokens.toLocaleString();
+  if (activeCount) activeCount.textContent = `${activeSafe.toLocaleString()} act`;
+  if (compressedCount) compressedCount.textContent = `${summaryWeight.toLocaleString()} comp`;
   if (pctBadge) pctBadge.textContent = `${pctInt}%`;
   if (meter) meter.setAttribute('aria-valuenow', pctInt);
 
-  if (fill && count) {
+  if (count) {
     if (pct < 0.6) {
-      fill.style.background = 'var(--green)';
       count.className = 'safe';
     } else if (pct < threshold) {
-      fill.style.background = 'linear-gradient(90deg, var(--green), var(--yellow))';
       count.className = 'warn';
     } else {
-      fill.style.background = 'linear-gradient(90deg, var(--yellow), var(--red))';
       count.className = 'danger';
     }
   }
@@ -1308,9 +2261,12 @@ function updateMeter(tokens) {
 
 // ── Stats sidebar ─────────────────────────────────────────
 function updateStats() {
-  document.getElementById('stat-turns').textContent = turnCount;
-  document.getElementById('stat-summaries').textContent = summaryCount;
-  document.getElementById('stat-saved').textContent = tokensSaved >= 1000
+  const turns = document.getElementById('stat-turns');
+  const summaries = document.getElementById('stat-summaries');
+  const saved = document.getElementById('stat-saved');
+  if (turns) turns.textContent = turnCount;
+  if (summaries) summaries.textContent = summaryCount;
+  if (saved) saved.textContent = tokensSaved >= 1000
     ? (tokensSaved / 1000).toFixed(1) + 'k'
     : tokensSaved;
 }
@@ -1321,6 +2277,7 @@ function logActivity(text, type = 'default') {
   el.className = `activity-entry ${type}`;
   el.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
   const log = document.getElementById('activity-log');
+  if (!log) return;
   log.prepend(el);
   // cap at 20 entries
   while (log.children.length > 20) log.lastChild.remove();
@@ -1409,7 +2366,7 @@ function removeTypingIndicator() {
 }
 
 function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 // ── Auto-grow textarea ────────────────────────────────────
@@ -1419,7 +2376,7 @@ textarea.addEventListener('input', () => {
   textarea.style.height = Math.min(textarea.scrollHeight, 180) + 'px';
   // live token preview
   const est = estimateTokens(textarea.value);
-  updateMeter(estimateContextTokens() + est);
+  updateMeter(estimateActiveTokens() + est);
 });
 
 textarea.addEventListener('keydown', (e) => {
@@ -1433,7 +2390,7 @@ textarea.addEventListener('keydown', (e) => {
 document.getElementById('threshold-slider').addEventListener('input', function () {
   threshold = this.value / 100;
   document.getElementById('threshold-val').textContent = this.value + '%';
-  updateMeter(totalTokens);
+  updateMeter(estimateActiveTokens());
   logActivity(`Threshold set to ${this.value}%`, 'info');
 });
 
@@ -1441,7 +2398,7 @@ document.getElementById('threshold-slider').addEventListener('input', function (
 document.getElementById('model-select').addEventListener('change', function () {
   const found = getModels().find(m => m.id === this.value);
   maxTokens = found ? found.ctx : 128000;
-  updateMeter(totalTokens);
+  updateMeter(estimateActiveTokens());
   logActivity(`Model: ${this.value}`, 'info');
 });
 
@@ -1449,9 +2406,21 @@ document.getElementById('model-select').addEventListener('change', function () {
 // ── Summarisation with Notification Toasts ────────────────
 // ── Summarisation with Interactive Permission Check ──────
 async function autoSummarizeIfNeeded() {
-  if (messages.length < 2) return;          
-  
-  const tokens = estimateContextTokens();
+  if (messages.length < 2) return;
+
+  const tokens = estimateActiveTokens();
+
+  // If we've hit or exceeded the hard token limit, auto-compress immediately (no prompt)
+  if (tokens >= maxTokens) {
+    appendMessage('system', '⚡ Token limit reached — compressing history to free context...', 0);
+    logActivity('Token limit reached; auto-compressing without prompt', 'summarize');
+    // Small UI pause for smoother UX
+    await sleep(200);
+    await runSummarization();
+    return;
+  }
+
+  // If over the user-configured threshold (but below hard max), ask for permission first
   if (tokens / maxTokens < threshold) return;
 
   // Prompt the user for explicit permission via a modal popup box
@@ -1461,7 +2430,7 @@ async function autoSummarizeIfNeeded() {
     // If user selects "Yes" (OK), execute compression routines
     appendMessage('system', '⚡ Compressing older history frames to clear context workspace paths...', 0);
     logActivity('Auto-compress approved by user', 'info');
-    
+
     // Tiny visual break delay for UI smoothness
     await sleep(800);
     await runSummarization();
@@ -1471,17 +2440,21 @@ async function autoSummarizeIfNeeded() {
   }
 }
 
-async function runSummarization() {
-  if (isBusy) return;
+async function runSummarization(force = false) {
+  if (isBusy) {
+    logActivity('Wait for the current reply before compressing.', 'warn');
+    return;
+  }
   const turnsBefore = messages.length;
 
-  // Take oldest half to summarise
+  // Take oldest half to summarise; manual force compresses everything available.
   const keepCount = Math.max(2, Math.floor(messages.length / 2));
-  const toSummarise = messages.slice(0, messages.length - keepCount);
+  let toSummarise = force ? messages.slice(0) : messages.slice(0, messages.length - keepCount);
   if (toSummarise.length === 0) return;
 
-  // Token estimate before
+  // Token estimate before (active messages + summary for internal bookkeeping)
   let tokensBefore = estimateContextTokens();
+  const tokensBeforeActive = estimateActiveTokens();
 
   setBusy(true);
   showSummarising(true);
@@ -1496,7 +2469,7 @@ async function runSummarization() {
         .filter(m => m.role === 'user')
         .map(m => m.parts[0].text.slice(0, 60))
         .join('; ');
-      summaryText = `[DEMO SUMMARY] The conversation so far covered: ${topics}. Key facts were discussed and context maintained.`;
+      summaryText = `[DEMO SUMMARY] The conversation so far covered: ${topics || 'the opening context and assistant guidance'}. Key facts were discussed and context maintained.`;
     } else {
       const model = document.getElementById('model-select').value;
       const summaryPrompt = buildSummaryPrompt(toSummarise);
@@ -1508,17 +2481,18 @@ async function runSummarization() {
     const prevBlob = summaryBlob ? summaryBlob + '\n\n' : '';
     summaryBlob = prevBlob + summaryText;
 
-    // Drop old messages, keep recent
-    const keepCount2 = Math.max(2, Math.floor(messages.length / 2));
-    messages = messages.slice(messages.length - keepCount2);
+    // Drop old messages, keep recent (if we summarised everything because of force, we may keep none)
+    const keepCount2 = (toSummarise.length === messages.length) ? 0 : Math.max(2, Math.floor(messages.length / 2));
+    messages = keepCount2 > 0 ? messages.slice(messages.length - keepCount2) : [];
 
     // Estimate tokens after
     const tokensAfter = estimateContextTokens();
-    const saved = Math.max(0, tokensBefore - tokensAfter);
+    const tokensAfterActive = estimateActiveTokens();
+    const saved = Math.max(0, tokensBeforeActive - tokensAfterActive);
     tokensSaved += saved;
     summaryCount++;
     updateStats();
-    updateMeter(tokensAfter);
+    updateMeter(tokensAfterActive);
 
     appendSummaryCard(summaryText, saved);
     logActivity(`Compressed: ${turnsBefore} turns → ${messages.length} (saved ~${saved} tok)`, 'summarize');
@@ -1592,7 +2566,7 @@ async function sendMessage() {
       const { text: reply, usage } = await generate(model, contents);
       aiText = reply.trim() || '(No response)';
 
-      if (usage?.totalTokenCount) updateMeter(usage.totalTokenCount);
+      if (usage?.totalTokenCount) updateMeter(estimateActiveTokens());
     }
 
     removeTypingIndicator();
@@ -1602,10 +2576,11 @@ async function sendMessage() {
     turnCount++;
     updateStats();
 
-    updateMeter(estimateContextTokens());
+    updateMeter(estimateActiveTokens());
     logActivity(`Turn ${Math.ceil(turnCount / 2)}: ${text.slice(0, 40)}…`);
 
     // check if auto-compress needed
+    setBusy(false);
     await autoSummarizeIfNeeded();
 
   } catch (err) {
@@ -1637,7 +2612,7 @@ function buildContents() {
   return all;
 }
 
-// ── Demo mode ────────────────────────────────────────────
+// ── Demo mode ────────
 const DEMO_REPLIES = [
   "That's a fascinating question! Let me think through this carefully. The topic you're exploring has many dimensions worth considering.",
   "Great point! In essence, this comes down to understanding the underlying principles at play. There are several key factors to consider here.",
@@ -1671,12 +2646,15 @@ function generateFiller() {
 // ── Utility ───────────────────────────────────────────────
 function setBusy(v) {
   isBusy = v;
-  document.getElementById('send-btn').disabled = v;
-  document.getElementById('user-input').disabled = v;
+  const send = document.getElementById('send-btn');
+  const input = document.getElementById('user-input');
+  if (send) send.disabled = v;
+  if (input) input.disabled = v;
 }
 
 function showSummarising(v) {
   const banner = document.getElementById('summarising-banner');
+  if (!banner) return;
   if (v) banner.classList.add('visible');
   else   banner.classList.remove('visible');
 }
@@ -1684,17 +2662,17 @@ function showSummarising(v) {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function useHint(el) {
-  document.getElementById('user-input').value = el.textContent;
-  document.getElementById('user-input').focus();
+  const input = document.getElementById('user-input');
+  input.value = el.textContent;
+  input.focus();
+  input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 // ── Controls ──────────────────────────────────────────────
 function forceSummarize() {
-  if (messages.length < 2) {
-    logActivity('Not enough messages to compress yet.', 'warn');
-    return;
-  }
-  runSummarization();
+  logActivity('Manual summarise requested', 'info');
+  // Force summarisation even with few turns
+  runSummarization(true);
 }
 
 function clearChat() {
@@ -1733,6 +2711,9 @@ function saveKey() {
     apiKey = val;
   }
   demoMode = false;
+  document.body.classList.remove('landing-mode');
+  document.body.classList.add('app-mode');
+  document.getElementById('landing')?.setAttribute('aria-hidden', 'true');
   populateModelSelect();
   document.getElementById('key-modal-bg').style.display = 'none';
   const pLabel = provider === 'openai' ? 'OpenAI / Codex' : 'Gemini';
@@ -1740,15 +2721,24 @@ function saveKey() {
 }
 
 function useDemoMode() {
+  document.body.classList.remove('landing-mode');
+  document.body.classList.add('app-mode');
+  document.getElementById('landing')?.setAttribute('aria-hidden', 'true');
   demoMode = true;
   apiKey = '';
   populateModelSelect();
   document.getElementById('key-modal-bg').style.display = 'none';
+  if (messages.length > 0) {
+    logActivity('Demo mode active (no real API calls)', 'info');
+    document.getElementById('user-input')?.focus({ preventScroll: true });
+    return;
+  }
   logActivity('Demo mode active (no real API calls)', 'info');
   removeEmptyState();
   appendMessage('ai', '👋 Welcome to Context Cop Demo Mode!\n\nI\'m a simulated assistant. Chat freely — the token meter tracks estimated usage and will auto-compress when you hit the threshold. Try the hint chips below or ask me anything!', estimateTokens('Welcome'));
   messages.push({ role: 'model', parts: [{ text: 'Welcome to demo mode!' }] });
-  updateMeter(estimateContextTokens());
+  updateMeter(estimateActiveTokens());
+  document.getElementById('user-input')?.focus({ preventScroll: true });
 }
 
 function showKeyModal() {
@@ -1761,6 +2751,54 @@ function showKeyModal() {
     if (e.key === 'Enter') saveKey();
   });
 });
+
+// ── Backend connectivity check ─────────────────────────────────
+async function checkBackend() {
+  logActivity('Checking backend connectivity…', 'info');
+  const btn = document.getElementById('check-conn-btn');
+  const orig = btn ? btn.textContent : '';
+  if (btn) btn.textContent = 'Checking…';
+
+  try {
+    if (demoMode) {
+      logActivity('Demo mode is active; no backend needed', 'info');
+      alert('Demo mode is active. No backend or provider API is being used.');
+      return;
+    }
+
+    // Try a local health check first (conventional proxy endpoint)
+    if (window.location.protocol !== 'file:') {
+      const res = await fetch('/health', { cache: 'no-cache' });
+      if (res.ok) {
+        logActivity('Backend /health responded OK', 'info');
+        alert('Backend reachable at /health');
+        return;
+      }
+    }
+
+    // Provider-specific sanity checks (best-effort; may be subject to CORS)
+    if (provider === 'openai' && apiKey) {
+      const base = openaiBase.replace(/\/$/, '');
+      const res = await fetch(`${base}/models`, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+      if (res.ok) { logActivity('OpenAI API reachable', 'info'); alert('OpenAI reachable'); return; }
+      throw new Error(`OpenAI probe returned HTTP ${res.status}`);
+    }
+
+    if (provider === 'gemini' && apiKey) {
+      // Best-effort probe for Gemini base (may 403/CORS); still useful to attempt
+      const res = await fetch(`${GEMINI_BASE}?key=${apiKey}`);
+      if (res.ok) { logActivity('Gemini API reachable', 'info'); alert('Gemini reachable'); return; }
+      throw new Error(`Gemini probe returned HTTP ${res.status}`);
+    }
+
+    throw new Error('No /health endpoint found and no provider key is connected.');
+  } catch (err) {
+    logActivity(`Connectivity check failed: ${err.message}`, 'warn');
+    alert('Connectivity check failed (see activity log).');
+  } finally {
+    if (btn) btn.textContent = orig;
+  }
+}
 
 // ── Init ──────────────────────────────────────────────────
 populateModelSelect();
